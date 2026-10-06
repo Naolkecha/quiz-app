@@ -1,0 +1,16 @@
+[project]
+name = "challenge-bot"
+version = "0.1.0"
+description = "Telegram bot for the Challenge Mini App"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.15",
+    "pydantic-settings>=2.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["bot"]

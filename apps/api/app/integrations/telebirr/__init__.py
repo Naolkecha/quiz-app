@@ -1,0 +1,1 @@
+"""Telebirr payment boundary."""

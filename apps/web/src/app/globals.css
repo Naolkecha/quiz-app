@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+:root {
+  --background: var(--tg-theme-bg-color, #f3efe6);
+  --foreground: var(--tg-theme-text-color, #1c1915);
+  --card: var(--tg-theme-secondary-bg-color, #fffdf8);
+  --muted: var(--tg-theme-hint-color, #6f685e);
+  --accent: var(--tg-theme-button-color, #4f46e5);
+  --accent-text: var(--tg-theme-button-text-color, #fffaf3);
+  --font-sans: var(--font-geist-sans), "Segoe UI", sans-serif;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+}
+
+body {
+  background:
+    radial-gradient(900px 280px at 50% -80px, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.press {
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease,
+    opacity 160ms ease;
+}
+
+.press:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.rise {
+  animation: rise 420ms ease both;
+}
+
+.ask {
+  animation: ask 220ms ease both;
+}
+
+.float-token {
+  animation: float-token 3s ease-in-out infinite;
+}
+
+.game-hero::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 25%, rgb(255 255 255 / 0.05) 45%, transparent 65%);
+  content: "";
+  pointer-events: none;
+  transform: translateX(-100%);
+  animation: hero-shine 5s ease-in-out infinite;
+}
+
+.prize-card {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.prize-card:active {
+  box-shadow: 0 6px 16px rgb(28 25 21 / 0.08);
+  transform: scale(0.96) translateY(1px);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes float-token {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(4deg);
+  }
+}
+
+@keyframes hero-shine {
+  0%,
+  65% {
+    transform: translateX(-100%);
+  }
+  85%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .ask,
+  .float-token,
+  .game-hero::after {
+    animation: none;
+  }
+
+  .press,
+  .prize-card {
+    transition: none;
+  }
+}
+
+@keyframes ask {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
