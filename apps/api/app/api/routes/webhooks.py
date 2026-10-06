@@ -93,3 +93,41 @@ async def verify_et_webhook(request: Request, session: DbSession) -> Response:
             event_id,
         )
     return Response(status_code=204)
+
+
+@router.post(
+    "/telegram",
+    summary="Receive Telegram Bot Webhook updates",
+)
+async def telegram_webhook(request: Request) -> dict[str, bool]:
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": False}
+    from app.services.telegram_bot import TelegramBotService
+
+    service = TelegramBotService()
+    await service.handle_update(data)
+    return {"ok": True}
+
+
+@router.post(
+    "/telegram/setup",
+    summary="Register Telegram webhook and menu button with Telegram API",
+)
+async def setup_telegram_webhook(request: Request) -> dict[str, Any]:
+    from app.services.telegram_bot import TelegramBotService
+
+    service = TelegramBotService()
+    base = str(request.base_url).rstrip("/")
+    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
+        base = "https://" + base[len("http://") :]
+    webhook_url = f"{base}/api/webhooks/telegram"
+    webhook_ok = await service.set_webhook(webhook_url)
+    menu_ok = await service.set_menu_button()
+    return {
+        "webhook_url": webhook_url,
+        "webhook_registered": webhook_ok,
+        "menu_button_registered": menu_ok,
+    }
+

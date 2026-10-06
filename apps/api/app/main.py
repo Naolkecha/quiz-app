@@ -20,8 +20,21 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
+    settings = get_settings()
+    if settings.telegram_bot_token and settings.app_env != "test":
+        try:
+            from app.services.telegram_bot import TelegramBotService
+
+            bot_service = TelegramBotService(settings)
+            webhook_url = "https://quiz-app-wwdo.onrender.com/api/webhooks/telegram"
+            await bot_service.set_webhook(webhook_url)
+            await bot_service.set_menu_button()
+            logger.info("Telegram webhook auto-configured at %s", webhook_url)
+        except Exception as exc:
+            logger.warning("Could not auto-configure Telegram webhook: %s", exc)
     yield
     await engine.dispose()
+
 
 
 def create_app() -> FastAPI:
