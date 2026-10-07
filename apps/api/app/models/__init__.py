@@ -4,7 +4,7 @@ from app.models.challenge import Challenge, ChallengeStatus
 from app.models.daily_spin import DailySpin, DailySpinConfig
 from app.models.duel import Duel, DuelStatus
 from app.models.entry import ChallengeEntry
-from app.models.question import Choice, Question
+from app.models.question import Choice, Question, QuestionCategory
 from app.models.referral import Referral, ReferralConfig
 from app.models.user import User
 from app.models.wallet import (
@@ -30,6 +30,7 @@ __all__ = [
     "DailySpin",
     "DailySpinConfig",
     "Question",
+    "QuestionCategory",
     "Referral",
     "ReferralConfig",
     "User",

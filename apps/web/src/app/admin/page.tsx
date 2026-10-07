@@ -40,6 +40,14 @@ import {
   updateAdminReferralConfig,
   getAdminSpinOverview,
   updateAdminSpinConfig,
+  listAdminCategories,
+  createAdminCategory,
+  updateAdminCategory,
+  deleteAdminCategory,
+  listAdminBankQuestions,
+  createAdminBankQuestion,
+  importAdminBankQuestions,
+  deleteAdminBankQuestion,
 } from "@/lib/api";
 import type {
   AdminChallenge,
@@ -56,12 +64,15 @@ import type {
   QuestionInput,
   ReferralConfig,
   SpinSegment,
+  AdminQuestionCategory,
+  AdminBankQuestion,
 } from "@/lib/types";
 
 type Tab =
   | "overview"
   | "finance"
   | "challenges"
+  | "questions"
   | "spin"
   | "players"
   | "cashouts"
@@ -114,6 +125,7 @@ export default function AdminPage() {
             ["overview", "Overview"],
             ["finance", "Finance"],
             ["challenges", "Challenges"],
+            ["questions", "Question Bank"],
             ["spin", "Daily Spin"],
             ["players", "Players"],
             ["cashouts", "Cash outs"],
@@ -140,6 +152,7 @@ export default function AdminPage() {
       {tab === "overview" ? <OverviewTab key={reloadKey} token={sessionToken} onOpen={setTab} /> : null}
       {tab === "finance" ? <FinanceTab key={reloadKey} token={sessionToken} onOpen={setTab} /> : null}
       {tab === "challenges" ? <ChallengesTab key={reloadKey} token={sessionToken} isOwner={isOwner} /> : null}
+      {tab === "questions" ? <QuestionBankTab key={reloadKey} token={sessionToken} isOwner={isOwner} /> : null}
       {tab === "spin" ? <SpinTab key={reloadKey} token={sessionToken} /> : null}
       {tab === "players" ? <PlayersTab key={reloadKey} token={sessionToken} isOwner={isOwner} /> : null}
       {tab === "cashouts" ? <CashOutsTab key={reloadKey} token={sessionToken} /> : null}
@@ -3387,3 +3400,714 @@ function SpinTab({ token }: { token: string }) {
     </div>
   );
 }
+
+function QuestionBankTab({ token, isOwner }: { token: string; isOwner: boolean }) {
+  const [categories, setCategories] = useState<AdminQuestionCategory[] | null>(null);
+  const [selectedCat, setSelectedCat] = useState<string>("all");
+  const [questions, setQuestions] = useState<AdminBankQuestion[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<Message | null>(null);
+
+  // Modals
+  const [modal, setModal] = useState<"none" | "new_category" | "new_question" | "import_questions">("none");
+
+  // New Category Form
+  const [newCatSlug, setNewCatSlug] = useState("");
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatIcon, setNewCatIcon] = useState("🎯");
+  const [newCatDesc, setNewCatDesc] = useState("");
+
+  // New Question Form
+  const [qCat, setQCat] = useState("general");
+  const [qPrompt, setQPrompt] = useState("");
+  const [qChoices, setQChoices] = useState<string[]>(["", "", "", ""]);
+  const [qCorrectIdx, setQCorrectIdx] = useState<number>(0);
+
+  // Import JSON Form
+  const [importCat, setImportCat] = useState("general");
+  const [importJson, setImportJson] = useState("");
+
+  const loadCategories = useCallback(async () => {
+    try {
+      const cats = await listAdminCategories(token);
+      setCategories(cats);
+      if (cats.length > 0 && !cats.some((c) => c.id === qCat)) {
+        setQCat(cats[0].id);
+        setImportCat(cats[0].id);
+      }
+    } catch (err) {
+      setResult(describeError(err, "Failed to load question categories."));
+    }
+  }, [token, qCat]);
+
+  const loadQuestions = useCallback(
+    async (catId: string) => {
+      try {
+        const qs = await listAdminBankQuestions(token, catId === "all" ? undefined : catId, 150);
+        setQuestions(qs);
+      } catch (err) {
+        setResult(describeError(err, "Failed to load questions."));
+      }
+    },
+    [token],
+  );
+
+  useEffect(() => {
+    void loadCategories();
+  }, [loadCategories]);
+
+  useEffect(() => {
+    void loadQuestions(selectedCat);
+  }, [selectedCat, loadQuestions]);
+
+  const handleCreateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCatSlug.trim() || !newCatName.trim()) {
+      setResult({ tone: "error", title: "Missing fields", message: "Category ID and Name are required." });
+      return;
+    }
+    setBusy(true);
+    try {
+      await createAdminCategory(token, {
+        id: newCatSlug.trim().toLowerCase(),
+        name: newCatName.trim(),
+        icon: newCatIcon.trim() || "🎯",
+        description: newCatDesc.trim() || undefined,
+      });
+      setResult({ tone: "success", title: "Category Created", message: `Successfully added ${newCatName}.` });
+      setNewCatSlug("");
+      setNewCatName("");
+      setNewCatIcon("🎯");
+      setNewCatDesc("");
+      setModal("none");
+      await loadCategories();
+    } catch (err) {
+      setResult(describeError(err, "Could not create category."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleToggleCategoryActive = async (cat: AdminQuestionCategory) => {
+    setBusy(true);
+    try {
+      await updateAdminCategory(token, cat.id, { is_active: !cat.is_active });
+      await loadCategories();
+    } catch (err) {
+      setResult(describeError(err, "Could not update category status."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteCategory = async (cat: AdminQuestionCategory) => {
+    if (!confirm(`Are you sure you want to delete category "${cat.name}"?`)) return;
+    setBusy(true);
+    try {
+      await deleteAdminCategory(token, cat.id);
+      setResult({ tone: "success", title: "Category Deleted", message: `Removed ${cat.name}.` });
+      if (selectedCat === cat.id) setSelectedCat("all");
+      await loadCategories();
+    } catch (err) {
+      setResult(describeError(err, "Could not delete category."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCreateQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!qPrompt.trim()) {
+      setResult({ tone: "error", title: "Missing Prompt", message: "Question prompt cannot be empty." });
+      return;
+    }
+    const filteredChoices = qChoices.map((c) => c.trim());
+    if (filteredChoices.some((c) => !c)) {
+      setResult({ tone: "error", title: "Incomplete Choices", message: "All 4 choices must be filled in." });
+      return;
+    }
+    setBusy(true);
+    try {
+      await createAdminBankQuestion(token, {
+        category: qCat,
+        prompt: qPrompt.trim(),
+        choices: filteredChoices.map((label, idx) => ({
+          label,
+          is_correct: idx === qCorrectIdx,
+        })),
+      });
+      setResult({ tone: "success", title: "Question Added", message: "Question saved to the question bank." });
+      setQPrompt("");
+      setQChoices(["", "", "", ""]);
+      setQCorrectIdx(0);
+      setModal("none");
+      await loadCategories();
+      await loadQuestions(selectedCat);
+    } catch (err) {
+      setResult(describeError(err, "Could not create question."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleImportJson = async (e: React.FormEvent) => {
+    e.preventDefault();
+    let parsed: any;
+    try {
+      parsed = JSON.parse(importJson.trim());
+    } catch {
+      setResult({ tone: "error", title: "Invalid JSON", message: "Please enter valid JSON array of questions." });
+      return;
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      setResult({ tone: "error", title: "Empty Questions", message: "JSON must be a non-empty array of questions." });
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await importAdminBankQuestions(token, importCat, parsed);
+      setResult({ tone: "success", title: "Questions Imported", message: res.message });
+      setImportJson("");
+      setModal("none");
+      await loadCategories();
+      await loadQuestions(selectedCat);
+    } catch (err) {
+      setResult(describeError(err, "Failed to import questions."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteQuestion = async (qId: string) => {
+    if (!confirm("Are you sure you want to delete this question?")) return;
+    setBusy(true);
+    try {
+      await deleteAdminBankQuestion(token, qId);
+      setResult({ tone: "success", title: "Question Deleted", message: "Question removed." });
+      await loadCategories();
+      await loadQuestions(selectedCat);
+    } catch (err) {
+      setResult(describeError(err, "Could not delete question."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selectedCategoryMeta = categories?.find((c) => c.id === selectedCat);
+
+  return (
+    <div className="space-y-5">
+      {/* Header with Quick Actions */}
+      <section className="rounded-3xl bg-[var(--card)] p-5 shadow-[0_8px_24px_rgba(28,25,21,0.05)] border border-black/5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-[var(--foreground)]">Question Bank & Categories</h2>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Manage questions and categories used in 1v1 Fast Duels and Challenges. Duels randomly sample from these pools.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {isOwner ? (
+              <button
+                type="button"
+                onClick={() => setModal("new_category")}
+                className="press h-9 rounded-full bg-black/5 px-3.5 text-xs font-semibold text-[var(--foreground)] hover:bg-black/10"
+              >
+                + New Category
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setModal("import_questions")}
+              className="press h-9 rounded-full bg-black/5 px-3.5 text-xs font-semibold text-[var(--foreground)] hover:bg-black/10"
+            >
+              📥 Bulk Import
+            </button>
+            <button
+              type="button"
+              onClick={() => setModal("new_question")}
+              className="press h-9 rounded-full bg-[var(--foreground)] px-4 text-xs font-semibold text-[var(--background)] shadow"
+            >
+              + Add Question
+            </button>
+          </div>
+        </div>
+
+        {/* Categories Grid / Badges */}
+        <div className="mt-5 pt-4 border-t border-black/5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
+              Categories ({categories?.length ?? 0})
+            </span>
+          </div>
+
+          {!categories ? (
+            <div className="h-12 animate-pulse rounded-2xl bg-black/5" />
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedCat("all")}
+                className={`press flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                  selectedCat === "all"
+                    ? "bg-[var(--accent)] text-[var(--accent-text)] shadow-sm"
+                    : "bg-black/5 text-[var(--foreground)] hover:bg-black/10"
+                }`}
+              >
+                <span>✨ All Categories</span>
+                <span className="rounded-full bg-black/10 px-1.5 py-0.2 text-[10px]">
+                  {categories.reduce((acc, c) => acc + c.question_count, 0)}
+                </span>
+              </button>
+
+              {categories.map((cat) => {
+                const isSelected = selectedCat === cat.id;
+                const isReady = cat.question_count >= 5;
+                return (
+                  <div
+                    key={cat.id}
+                    className={`inline-flex items-center rounded-full border transition-all ${
+                      isSelected
+                        ? "border-[var(--accent)] bg-[var(--accent)] text-[var(--accent-text)] shadow-sm"
+                        : "border-black/5 bg-[var(--card)] text-[var(--foreground)]"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCat(cat.id)}
+                      className="press flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold"
+                    >
+                      <span>{cat.icon || "🎯"}</span>
+                      <span>{cat.name}</span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                          isReady
+                            ? isSelected
+                              ? "bg-white/20 text-white"
+                              : "bg-emerald-100 text-emerald-800"
+                            : isSelected
+                            ? "bg-white/20 text-white"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                        title={isReady ? "Ready for duels" : "Needs at least 5 questions for duels"}
+                      >
+                        {cat.question_count} Qs
+                      </span>
+                    </button>
+                    {isOwner ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleCategoryActive(cat)}
+                        className={`press px-2 py-1 text-[10px] font-bold ${
+                          cat.is_active ? "text-emerald-600 hover:text-emerald-700" : "text-rose-500 hover:text-rose-600"
+                        }`}
+                        title={cat.is_active ? "Active in duels (click to deactivate)" : "Inactive (click to activate)"}
+                      >
+                        {cat.is_active ? "●" : "○"}
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Questions Explorer */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <h3 className="text-sm font-bold text-[var(--foreground)]">
+              {selectedCat === "all" ? "All Questions" : `${selectedCategoryMeta?.name ?? selectedCat} Questions`}
+            </h3>
+            <p className="text-xs text-[var(--muted)]">
+              {questions ? `${questions.length} questions listed` : "Loading..."}
+            </p>
+          </div>
+        </div>
+
+        {!questions ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-28 animate-pulse rounded-2xl bg-black/5" />
+            ))}
+          </div>
+        ) : questions.length === 0 ? (
+          <div className="rounded-3xl border border-dashed border-black/10 bg-[var(--card)] p-8 text-center">
+            <span className="text-3xl">📭</span>
+            <h4 className="mt-2 text-sm font-bold">No questions found</h4>
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              {selectedCat === "all"
+                ? "No questions in the database yet."
+                : `No questions under ${selectedCategoryMeta?.name ?? selectedCat} yet. Add at least 5 to enable duels!`}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedCat !== "all") setQCat(selectedCat);
+                setModal("new_question");
+              }}
+              className="press mt-3 h-9 px-4 rounded-full bg-[var(--foreground)] text-[var(--background)] text-xs font-semibold"
+            >
+              + Add First Question
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {questions.map((q, idx) => {
+              const catMeta = categories?.find((c) => c.id === q.category);
+              return (
+                <div
+                  key={q.id}
+                  className="rounded-2xl border border-black/5 bg-[var(--card)] p-4 shadow-sm space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-[10px] font-bold text-[var(--foreground)]">
+                        <span>{catMeta?.icon || "🎯"}</span>
+                        <span className="capitalize">{catMeta?.name || q.category}</span>
+                      </span>
+                      <p className="text-xs font-bold text-[var(--foreground)] leading-relaxed">
+                        {idx + 1}. {q.prompt}
+                      </p>
+                    </div>
+
+                    {isOwner ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteQuestion(q.id)}
+                        className="press shrink-0 rounded-lg p-1.5 text-xs text-rose-500 hover:bg-rose-50"
+                        title="Delete Question"
+                      >
+                        🗑️
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                    {q.choices.map((c) => (
+                      <div
+                        key={c.id ?? c.label}
+                        className={`flex items-center justify-between rounded-xl px-3 py-2 text-xs font-medium border ${
+                          c.is_correct
+                            ? "bg-emerald-50 border-emerald-300 text-emerald-950 font-bold"
+                            : "bg-black/[0.02] border-black/5 text-[var(--muted)]"
+                        }`}
+                      >
+                        <span className="truncate">{c.label}</span>
+                        {c.is_correct ? (
+                          <span className="rounded bg-emerald-600 px-1.5 py-0.2 text-[9px] font-bold text-white uppercase tracking-wider">
+                            ✓ Correct
+                          </span>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Modal: New Category */}
+      {modal === "new_category" ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="rise w-full max-w-md rounded-3xl bg-[var(--card)] p-5 shadow-2xl border border-black/5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold">Create Question Category</h3>
+              <button
+                type="button"
+                onClick={() => setModal("none")}
+                className="h-8 w-8 rounded-full bg-black/5 text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCategory} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] mb-1">
+                  Category ID (Slug) *
+                </label>
+                <input
+                  value={newCatSlug}
+                  onChange={(e) => setNewCatSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                  placeholder="e.g. premier_league, movies, crypto"
+                  className="h-10 w-full rounded-2xl border border-black/10 px-3 text-xs outline-none focus:border-[var(--accent)]"
+                  required
+                />
+                <span className="text-[10px] text-[var(--muted)]">Unique identifier (letters, numbers, underscores)</span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] mb-1">
+                  Display Name *
+                </label>
+                <input
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  placeholder="e.g. Premier League Football"
+                  className="h-10 w-full rounded-2xl border border-black/10 px-3 text-xs outline-none focus:border-[var(--accent)]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] mb-1">
+                  Icon Emoji
+                </label>
+                <input
+                  value={newCatIcon}
+                  onChange={(e) => setNewCatIcon(e.target.value)}
+                  placeholder="e.g. ⚽, 🎬, 🚀"
+                  className="h-10 w-24 rounded-2xl border border-black/10 px-3 text-base outline-none focus:border-[var(--accent)]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] mb-1">
+                  Description
+                </label>
+                <input
+                  value={newCatDesc}
+                  onChange={(e) => setNewCatDesc(e.target.value)}
+                  placeholder="Brief summary of topics covered"
+                  className="h-10 w-full rounded-2xl border border-black/10 px-3 text-xs outline-none focus:border-[var(--accent)]"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModal("none")}
+                  className="press h-10 flex-1 rounded-full bg-black/5 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="press h-10 flex-1 rounded-full bg-[var(--foreground)] text-xs font-semibold text-[var(--background)] shadow"
+                >
+                  Create Category
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Modal: Add Single Question */}
+      {modal === "new_question" ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="rise w-full max-w-lg rounded-3xl bg-[var(--card)] p-5 shadow-2xl border border-black/5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold">Add Question to Question Bank</h3>
+              <button
+                type="button"
+                onClick={() => setModal("none")}
+                className="h-8 w-8 rounded-full bg-black/5 text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateQuestion} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] mb-1">
+                  Category *
+                </label>
+                <select
+                  value={qCat}
+                  onChange={(e) => setQCat(e.target.value)}
+                  className="h-10 w-full rounded-2xl border border-black/10 bg-transparent px-3 text-xs outline-none focus:border-[var(--accent)]"
+                >
+                  {categories?.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.icon} {c.name} ({c.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] mb-1">
+                  Question Prompt *
+                </label>
+                <textarea
+                  value={qPrompt}
+                  onChange={(e) => setQPrompt(e.target.value)}
+                  placeholder="e.g. In which year was the African Union founded?"
+                  rows={2}
+                  className="w-full rounded-2xl border border-black/10 p-3 text-xs outline-none focus:border-[var(--accent)]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] mb-1">
+                  Choices (Select which choice is correct) *
+                </label>
+                <div className="space-y-2">
+                  {qChoices.map((choice, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex items-center gap-2 rounded-2xl border p-2 transition-all ${
+                        qCorrectIdx === idx ? "border-emerald-500 bg-emerald-50/50" : "border-black/10"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setQCorrectIdx(idx)}
+                        className={`h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${
+                          qCorrectIdx === idx
+                            ? "bg-emerald-600 text-white shadow"
+                            : "bg-black/10 text-[var(--muted)] hover:bg-black/20"
+                        }`}
+                        title="Mark as correct answer"
+                      >
+                        {qCorrectIdx === idx ? "✓" : String.fromCharCode(65 + idx)}
+                      </button>
+                      <input
+                        value={choice}
+                        onChange={(e) => {
+                          const updated = [...qChoices];
+                          updated[idx] = e.target.value;
+                          setQChoices(updated);
+                        }}
+                        placeholder={`Choice ${String.fromCharCode(65 + idx)}`}
+                        className="h-8 flex-1 bg-transparent px-2 text-xs outline-none"
+                        required
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModal("none")}
+                  className="press h-10 flex-1 rounded-full bg-black/5 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="press h-10 flex-1 rounded-full bg-[var(--foreground)] text-xs font-semibold text-[var(--background)] shadow"
+                >
+                  Save Question
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Modal: Bulk Import JSON */}
+      {modal === "import_questions" ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="rise w-full max-w-lg rounded-3xl bg-[var(--card)] p-5 shadow-2xl border border-black/5 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold">Bulk Import Questions (JSON)</h3>
+              <button
+                type="button"
+                onClick={() => setModal("none")}
+                className="h-8 w-8 rounded-full bg-black/5 text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleImportJson} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] mb-1">
+                  Target Category *
+                </label>
+                <select
+                  value={importCat}
+                  onChange={(e) => setImportCat(e.target.value)}
+                  className="h-10 w-full rounded-2xl border border-black/10 bg-transparent px-3 text-xs outline-none focus:border-[var(--accent)]"
+                >
+                  {categories?.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.icon} {c.name} ({c.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
+                    JSON Array *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportJson(
+                        JSON.stringify(
+                          [
+                            {
+                              prompt: "Which club won the 2024 UEFA Champions League?",
+                              choices: [
+                                { label: "Real Madrid", is_correct: true },
+                                { label: "Borussia Dortmund", is_correct: false },
+                                { label: "Bayern Munich", is_correct: false },
+                                { label: "PSG", is_correct: false },
+                              ],
+                            },
+                          ],
+                          null,
+                          2,
+                        ),
+                      );
+                    }}
+                    className="text-[10px] font-bold text-indigo-600 underline"
+                  >
+                    Load Sample
+                  </button>
+                </div>
+                <textarea
+                  value={importJson}
+                  onChange={(e) => setImportJson(e.target.value)}
+                  placeholder={`[\n  {\n    "prompt": "...",\n    "choices": [\n      {"label": "A", "is_correct": true},\n      {"label": "B", "is_correct": false}\n    ]\n  }\n]`}
+                  rows={8}
+                  className="w-full font-mono text-[11px] rounded-2xl border border-black/10 p-3 outline-none focus:border-[var(--accent)]"
+                  required
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setModal("none")}
+                  className="press h-10 flex-1 rounded-full bg-black/5 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="press h-10 flex-1 rounded-full bg-[var(--foreground)] text-xs font-semibold text-[var(--background)] shadow"
+                >
+                  Import Questions
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {busy ? <LoadingOverlay title="Processing request..." /> : null}
+      {result && !busy ? (
+        <ResultDialog result={result} onClose={() => setResult(null)} actionLabel="Done" />
+      ) : null}
+    </div>
+  );
+}
+

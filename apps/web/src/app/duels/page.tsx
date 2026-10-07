@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/app-shell";
-import { ApiError, createDuel, getWallet, listMyDuels, listOpenDuels } from "@/lib/api";
-import type { DuelView, Wallet } from "@/lib/types";
+import { ApiError, createDuel, getWallet, listDuelCategories, listMyDuels, listOpenDuels } from "@/lib/api";
+import type { DuelCategory, DuelView, Wallet } from "@/lib/types";
 
 const STAKE_OPTIONS = [
   { stake: 0, label: "Free (Demo)", prize: "0 ETB" },
@@ -15,13 +15,6 @@ const STAKE_OPTIONS = [
   { stake: 10, label: "10 ETB", prize: "18.00 ETB" },
   { stake: 25, label: "25 ETB", prize: "45.00 ETB" },
   { stake: 50, label: "50 ETB", prize: "90.00 ETB" },
-];
-
-const CATEGORIES = [
-  { key: "general", label: "General Knowledge", icon: "🧠" },
-  { key: "football", label: "Football Mania", icon: "⚽" },
-  { key: "history", label: "History & Culture", icon: "🏛️" },
-  { key: "science", label: "Science & Tech", icon: "🔬" },
 ];
 
 export default function DuelsHubPage() {
@@ -33,6 +26,7 @@ export default function DuelsHubPage() {
   const [activeTab, setActiveTab] = useState<"lobby" | "my">("lobby");
   const [openDuels, setOpenDuels] = useState<DuelView[] | null>(null);
   const [myDuels, setMyDuels] = useState<DuelView[] | null>(null);
+  const [categories, setCategories] = useState<DuelCategory[]>([]);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,15 +43,20 @@ export default function DuelsHubPage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [open, mine, userWallet] = await Promise.all([
+      const [open, mine, userWallet, cats] = await Promise.all([
         listOpenDuels(sessionToken ?? undefined),
         sessionToken ? listMyDuels(sessionToken) : Promise.resolve([]),
         sessionToken ? getWallet(sessionToken).catch(() => null) : Promise.resolve(null),
+        listDuelCategories().catch(() => []),
       ]);
       setOpenDuels(open);
       setMyDuels(mine);
       if (userWallet) {
         setWallet(userWallet);
+      }
+      setCategories(cats);
+      if (cats.length > 0 && !cats.some((c) => c.id === selectedCategory)) {
+        setSelectedCategory(cats[0].id);
       }
     } catch (err) {
       if (err instanceof ApiError) {
@@ -66,7 +65,7 @@ export default function DuelsHubPage() {
     } finally {
       setLoading(false);
     }
-  }, [sessionToken]);
+  }, [sessionToken, selectedCategory]);
 
   useEffect(() => {
     void loadData();
@@ -439,29 +438,44 @@ export default function DuelsHubPage() {
 
             {/* Category selection */}
             <div>
-              <label className="block text-xs font-bold text-[var(--muted)] uppercase tracking-wider mb-2">
-                Select Category
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {CATEGORIES.map((cat) => {
-                  const active = selectedCategory === cat.key;
-                  return (
-                    <button
-                      key={cat.key}
-                      type="button"
-                      onClick={() => setSelectedCategory(cat.key)}
-                      className={`press flex items-center gap-2 p-2.5 rounded-2xl text-left border transition-all ${
-                        active
-                          ? "bg-indigo-50 border-indigo-500 text-indigo-950 font-bold"
-                          : "bg-[var(--card)] border-black/5 text-xs font-medium"
-                      }`}
-                    >
-                      <span className="text-base">{cat.icon}</span>
-                      <span className="text-xs truncate">{cat.label}</span>
-                    </button>
-                  );
-                })}
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">
+                  Select Category
+                </label>
+                <span className="text-[10px] text-[var(--muted)]">
+                  {categories.length} available
+                </span>
               </div>
+              {categories.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-amber-500/20 bg-amber-500/5 p-3 text-center">
+                  <p className="text-xs font-semibold text-amber-800">No categories ready with questions right now.</p>
+                  <p className="text-[10px] text-[var(--muted)] mt-0.5">Categories require at least 5 questions to play duels.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {categories.map((cat) => {
+                    const active = selectedCategory === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setSelectedCategory(cat.id)}
+                        className={`press flex items-center gap-2 p-2.5 rounded-2xl text-left border transition-all ${
+                          active
+                            ? "bg-indigo-50 border-indigo-500 text-indigo-950 font-bold shadow-sm"
+                            : "bg-[var(--card)] border-black/5 text-xs font-medium hover:border-black/20"
+                        }`}
+                      >
+                        <span className="text-lg shrink-0">{cat.icon || "🎯"}</span>
+                        <div className="min-w-0">
+                          <span className="block text-xs truncate font-semibold">{cat.name}</span>
+                          <span className="block text-[10px] text-[var(--muted)] font-normal">{cat.question_count} Qs</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Challenge Mode: Link vs Username vs Public */}

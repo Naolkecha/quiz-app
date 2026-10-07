@@ -34,6 +34,12 @@ import type {
   CreateDuelBody,
   DuelView,
   SubmitDuelPlayBody,
+  DuelCategory,
+  AdminQuestionCategory,
+  CreateCategoryBody,
+  UpdateCategoryBody,
+  AdminBankQuestion,
+  CreateBankQuestionBody,
 } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -755,5 +761,96 @@ export function playOpponentDuel(
     body: JSON.stringify(body),
   });
 }
+
+export function listDuelCategories(): Promise<DuelCategory[]> {
+  return request<DuelCategory[]>("/api/duels/categories");
+}
+
+export function listAdminCategories(sessionToken: string): Promise<AdminQuestionCategory[]> {
+  return request<AdminQuestionCategory[]>("/api/admin/categories", {
+    headers: bearer(sessionToken),
+  });
+}
+
+export function createAdminCategory(
+  sessionToken: string,
+  body: CreateCategoryBody,
+): Promise<AdminQuestionCategory> {
+  return request<AdminQuestionCategory>("/api/admin/categories", {
+    method: "POST",
+    headers: bearer(sessionToken),
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateAdminCategory(
+  sessionToken: string,
+  categoryId: string,
+  body: UpdateCategoryBody,
+): Promise<AdminQuestionCategory> {
+  return request<AdminQuestionCategory>(`/api/admin/categories/${categoryId}`, {
+    method: "PATCH",
+    headers: bearer(sessionToken),
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteAdminCategory(
+  sessionToken: string,
+  categoryId: string,
+): Promise<void> {
+  return request<void>(`/api/admin/categories/${categoryId}`, {
+    method: "DELETE",
+    headers: bearer(sessionToken),
+  });
+}
+
+export function listAdminBankQuestions(
+  sessionToken: string,
+  category?: string,
+  limit: number = 100,
+): Promise<AdminBankQuestion[]> {
+  const query = category ? `?category=${encodeURIComponent(category)}&limit=${limit}` : `?limit=${limit}`;
+  return request<AdminBankQuestion[]>(`/api/admin/questions${query}`, {
+    headers: bearer(sessionToken),
+  });
+}
+
+export function createAdminBankQuestion(
+  sessionToken: string,
+  body: CreateBankQuestionBody,
+): Promise<AdminBankQuestion> {
+  return request<AdminBankQuestion>("/api/admin/questions", {
+    method: "POST",
+    headers: bearer(sessionToken),
+    body: JSON.stringify(body),
+  });
+}
+
+export function importAdminBankQuestions(
+  sessionToken: string,
+  category: string,
+  questions: QuestionInput[],
+): Promise<{ status: string; category: string; imported_count: number; message: string }> {
+  return request<{ status: string; category: string; imported_count: number; message: string }>(
+    "/api/admin/questions/import",
+    {
+      method: "POST",
+      headers: bearer(sessionToken),
+      body: JSON.stringify({ category, questions }),
+    },
+  );
+}
+
+export function deleteAdminBankQuestion(
+  sessionToken: string,
+  questionId: string,
+): Promise<void> {
+  return request<void>(`/api/admin/questions/${questionId}`, {
+    method: "DELETE",
+    headers: bearer(sessionToken),
+  });
+}
+
 
 

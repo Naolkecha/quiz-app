@@ -14,6 +14,14 @@ class DuelChoiceView(BaseModel):
     label: str
 
 
+class DuelCategoryView(BaseModel):
+    id: str
+    name: str
+    icon: str
+    description: str | None = None
+    question_count: int
+
+
 class DuelQuestionView(BaseModel):
     id: str
     prompt: str

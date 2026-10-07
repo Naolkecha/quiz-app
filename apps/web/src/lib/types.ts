@@ -445,4 +445,57 @@ export type SubmitDuelPlayBody = {
   time_seconds: number;
 };
 
+export type DuelCategory = {
+  id: string;
+  name: string;
+  icon: string;
+  description: string | null;
+  question_count: number;
+};
+
+export type AdminQuestionCategory = {
+  id: string;
+  name: string;
+  icon: string;
+  description: string | null;
+  is_active: boolean;
+  question_count: number;
+  created_at: string;
+};
+
+export type CreateCategoryBody = {
+  id: string;
+  name: string;
+  icon?: string;
+  description?: string;
+};
+
+export type UpdateCategoryBody = {
+  name?: string;
+  icon?: string;
+  description?: string;
+  is_active?: boolean;
+};
+
+export type AdminBankChoice = {
+  id?: string;
+  position?: number;
+  label: string;
+  is_correct: boolean;
+};
+
+export type AdminBankQuestion = {
+  id: string;
+  category: string;
+  prompt: string;
+  created_at: string;
+  choices: AdminBankChoice[];
+};
+
+export type CreateBankQuestionBody = {
+  category: string;
+  prompt: string;
+  choices: { label: string; is_correct: boolean }[];
+};
+
 

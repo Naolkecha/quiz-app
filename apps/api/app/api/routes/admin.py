@@ -12,7 +12,7 @@ from app.api.deps import AdminAccess, DbSession, require_owner
 from app.core.exceptions import AppError
 from app.models.challenge import Challenge, ChallengeStatus
 from app.models.entry import ChallengeEntry
-from app.models.question import Choice, Question
+from app.models.question import Choice, Question, QuestionCategory
 from app.models.user import User
 from app.models.wallet import (
     LedgerType,
@@ -1032,3 +1032,343 @@ async def update_admin_spin_config(
     config_update = AdminSpinConfigUpdate(**body)
     service = DailySpinService(session)
     return await service.admin_update_config(config_update)
+
+
+# ---------------------------------------------------------------------------
+# Question Bank & Categories management
+# ---------------------------------------------------------------------------
+
+
+class AdminCategoryView(BaseModel):
+    id: str
+    name: str
+    icon: str
+    description: str | None = None
+    is_active: bool
+    question_count: int
+    created_at: datetime
+
+
+class CreateCategoryRequest(BaseModel):
+    id: str = Field(min_length=2, max_length=64)
+    name: str = Field(min_length=2, max_length=128)
+    icon: str = Field(default="🎯", max_length=16)
+    description: str | None = None
+
+
+class UpdateCategoryRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=128)
+    icon: str | None = Field(default=None, max_length=16)
+    description: str | None = None
+    is_active: bool | None = None
+
+
+class CreateBankQuestionRequest(BaseModel):
+    category: str = Field(min_length=2, max_length=64)
+    prompt: str = Field(min_length=3)
+    choices: list[ChoiceIn] = Field(min_length=2, max_length=6)
+
+
+class ImportBankQuestionsRequest(BaseModel):
+    category: str = Field(min_length=2, max_length=64)
+    questions: list[QuestionIn] = Field(min_length=1, max_length=200)
+
+
+class BankQuestionView(BaseModel):
+    id: UUID
+    category: str
+    prompt: str
+    created_at: datetime
+    choices: list[AdminChoiceView]
+
+
+@router.get(
+    "/categories",
+    response_model=list[AdminCategoryView],
+    summary="List all question categories with their question counts",
+)
+async def list_admin_categories(
+    _role: AdminAccess,
+    session: DbSession,
+) -> list[AdminCategoryView]:
+    count_sq = (
+        select(Question.category.label("cat_id"), func.count(Question.id).label("q_count"))
+        .where(Question.category.is_not(None))
+        .group_by(Question.category)
+        .subquery()
+    )
+    stmt = (
+        select(QuestionCategory, func.coalesce(count_sq.c.q_count, 0).label("question_count"))
+        .outerjoin(count_sq, count_sq.c.cat_id == QuestionCategory.id)
+        .order_by(QuestionCategory.name.asc())
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        AdminCategoryView(
+            id=cat.id,
+            name=cat.name,
+            icon=cat.icon,
+            description=cat.description,
+            is_active=cat.is_active,
+            question_count=int(cnt),
+            created_at=cat.created_at,
+        )
+        for cat, cnt in rows
+    ]
+
+
+@router.post(
+    "/categories",
+    response_model=AdminCategoryView,
+    status_code=201,
+    summary="Create a new question category",
+    dependencies=[Depends(require_owner)],
+)
+async def create_admin_category(
+    body: CreateCategoryRequest,
+    session: DbSession,
+) -> AdminCategoryView:
+    slug = body.id.strip().lower()
+    existing = await session.get(QuestionCategory, slug)
+    if existing:
+        raise AppError(code="duplicate_category", message=f"Category '{slug}' already exists.", status_code=409)
+    category = QuestionCategory(
+        id=slug,
+        name=body.name.strip(),
+        icon=body.icon.strip() or "🎯",
+        description=body.description.strip() if body.description else None,
+        is_active=True,
+    )
+    session.add(category)
+    await session.commit()
+    await session.refresh(category)
+    return AdminCategoryView(
+        id=category.id,
+        name=category.name,
+        icon=category.icon,
+        description=category.description,
+        is_active=category.is_active,
+        question_count=0,
+        created_at=category.created_at,
+    )
+
+
+@router.patch(
+    "/categories/{category_id}",
+    response_model=AdminCategoryView,
+    summary="Update a question category",
+    dependencies=[Depends(require_owner)],
+)
+async def update_admin_category(
+    category_id: str,
+    body: UpdateCategoryRequest,
+    session: DbSession,
+) -> AdminCategoryView:
+    cat = await session.get(QuestionCategory, category_id.strip().lower())
+    if not cat:
+        raise AppError(code="not_found", message="Category not found.", status_code=404)
+    if body.name is not None:
+        cat.name = body.name.strip()
+    if body.icon is not None:
+        cat.icon = body.icon.strip()
+    if body.description is not None:
+        cat.description = body.description.strip() if body.description else None
+    if body.is_active is not None:
+        cat.is_active = body.is_active
+    await session.commit()
+    await session.refresh(cat)
+    count = await session.scalar(
+        select(func.count(Question.id)).where(Question.category == cat.id)
+    ) or 0
+    return AdminCategoryView(
+        id=cat.id,
+        name=cat.name,
+        icon=cat.icon,
+        description=cat.description,
+        is_active=cat.is_active,
+        question_count=int(count),
+        created_at=cat.created_at,
+    )
+
+
+@router.delete(
+    "/categories/{category_id}",
+    status_code=204,
+    summary="Delete a question category",
+    dependencies=[Depends(require_owner)],
+)
+async def delete_admin_category(
+    category_id: str,
+    session: DbSession,
+) -> None:
+    cat = await session.get(QuestionCategory, category_id.strip().lower())
+    if not cat:
+        raise AppError(code="not_found", message="Category not found.", status_code=404)
+    await session.delete(cat)
+    await session.commit()
+
+
+@router.get(
+    "/questions",
+    response_model=list[BankQuestionView],
+    summary="List questions in the question bank by category",
+)
+async def list_bank_questions(
+    _role: AdminAccess,
+    session: DbSession,
+    category: str | None = None,
+    limit: int = 100,
+) -> list[BankQuestionView]:
+    stmt = (
+        select(Question)
+        .options(selectinload(Question.choices))
+        .order_by(Question.created_at.desc())
+        .limit(limit)
+    )
+    if category:
+        stmt = stmt.where(Question.category == category.strip().lower())
+    questions = (await session.scalars(stmt)).all()
+    return [
+        BankQuestionView(
+            id=q.id,
+            category=q.category or "general",
+            prompt=q.prompt,
+            created_at=q.created_at,
+            choices=[
+                AdminChoiceView(
+                    id=c.id,
+                    position=c.position,
+                    label=c.label,
+                    is_correct=c.is_correct,
+                )
+                for c in q.choices
+            ],
+        )
+        for q in questions
+    ]
+
+
+@router.post(
+    "/questions",
+    response_model=BankQuestionView,
+    status_code=201,
+    summary="Add a single question to the question bank",
+    dependencies=[Depends(require_owner)],
+)
+async def create_bank_question(
+    body: CreateBankQuestionRequest,
+    session: DbSession,
+) -> BankQuestionView:
+    cat_slug = body.category.strip().lower()
+    cat = await session.get(QuestionCategory, cat_slug)
+    if not cat:
+        raise AppError(code="category_not_found", message=f"Category '{body.category}' does not exist.", status_code=404)
+    correct_count = sum(1 for c in body.choices if c.is_correct)
+    if correct_count != 1:
+        raise AppError(code="invalid_choices", message=f"Question must have exactly 1 correct answer (found {correct_count}).", status_code=422)
+
+    q = Question(
+        category=cat_slug,
+        prompt=body.prompt.strip(),
+        challenge_id=None,
+        position=None,
+    )
+    session.add(q)
+    await session.flush()
+    for idx, c in enumerate(body.choices, start=1):
+        session.add(
+            Choice(
+                question_id=q.id,
+                position=idx,
+                label=c.label.strip(),
+                is_correct=c.is_correct,
+            )
+        )
+    await session.commit()
+    await session.refresh(q)
+    stmt = select(Question).options(selectinload(Question.choices)).where(Question.id == q.id)
+    saved = await session.scalar(stmt)
+    assert saved is not None
+    return BankQuestionView(
+        id=saved.id,
+        category=saved.category or cat_slug,
+        prompt=saved.prompt,
+        created_at=saved.created_at,
+        choices=[
+            AdminChoiceView(id=c.id, position=c.position, label=c.label, is_correct=c.is_correct)
+            for c in saved.choices
+        ],
+    )
+
+
+@router.post(
+    "/questions/import",
+    response_model=dict[str, Any],
+    status_code=201,
+    summary="Bulk import questions into a question bank category",
+    dependencies=[Depends(require_owner)],
+)
+async def import_bank_questions(
+    body: ImportBankQuestionsRequest,
+    session: DbSession,
+) -> dict[str, Any]:
+    cat_slug = body.category.strip().lower()
+    cat = await session.get(QuestionCategory, cat_slug)
+    if not cat:
+        raise AppError(code="category_not_found", message=f"Category '{body.category}' does not exist.", status_code=404)
+
+    for idx, q_in in enumerate(body.questions, start=1):
+        correct_count = sum(1 for c in q_in.choices if c.is_correct)
+        if correct_count != 1:
+            raise AppError(
+                code="invalid_choices",
+                message=f"Question #{idx} ('{q_in.prompt[:30]}...') must have exactly 1 correct answer.",
+                status_code=422,
+            )
+
+    added_count = 0
+    for q_in in body.questions:
+        q = Question(
+            category=cat_slug,
+            prompt=q_in.prompt.strip(),
+            challenge_id=None,
+            position=None,
+        )
+        session.add(q)
+        await session.flush()
+        for c_idx, c in enumerate(q_in.choices, start=1):
+            session.add(
+                Choice(
+                    question_id=q.id,
+                    position=c_idx,
+                    label=c.label.strip(),
+                    is_correct=c.is_correct,
+                )
+            )
+        added_count += 1
+
+    await session.commit()
+    return {
+        "status": "ok",
+        "category": cat_slug,
+        "imported_count": added_count,
+        "message": f"Successfully imported {added_count} questions into {cat.name}.",
+    }
+
+
+@router.delete(
+    "/questions/{question_id}",
+    status_code=204,
+    summary="Delete a question from the question bank",
+    dependencies=[Depends(require_owner)],
+)
+async def delete_bank_question(
+    question_id: UUID,
+    session: DbSession,
+) -> None:
+    q = await session.get(Question, question_id)
+    if not q:
+        raise AppError(code="not_found", message="Question not found.", status_code=404)
+    await session.delete(q)
+    await session.commit()
+

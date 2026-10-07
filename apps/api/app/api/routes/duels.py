@@ -9,12 +9,23 @@ from fastapi import APIRouter, status
 from app.api.deps import CurrentUser, DbSession, OptionalUser
 from app.schemas.duel import (
     CreateDuelRequest,
+    DuelCategoryView,
     DuelView,
     SubmitDuelPlayRequest,
 )
 from app.services.duels import DuelService
 
 router = APIRouter(prefix="/duels", tags=["duels"])
+
+
+@router.get(
+    "/categories",
+    response_model=list[DuelCategoryView],
+    summary="List available duel categories with at least 5 questions",
+)
+async def list_duel_categories(session: DbSession) -> list[DuelCategoryView]:
+    service = DuelService(session)
+    return await service.list_available_categories()
 
 
 @router.post(

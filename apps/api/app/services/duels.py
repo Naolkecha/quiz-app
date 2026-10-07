@@ -14,12 +14,13 @@ from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import AppError, NotFoundError
 from app.models.duel import Duel, DuelStatus
-from app.models.question import Choice, Question
+from app.models.question import Choice, Question, QuestionCategory
 from app.models.user import User
 from app.models.wallet import LedgerType
 from app.schemas.duel import (
     CreateDuelRequest,
     DuelAnswerInput,
+    DuelCategoryView,
     DuelChoiceView,
     DuelPlayerView,
     DuelQuestionView,
@@ -30,63 +31,6 @@ from app.services.wallets import WalletService, _money
 
 NUM_DUEL_QUESTIONS = 5
 DUEL_EXPIRY_HOURS = 24
-FALLBACK_QUESTIONS = [
-    {
-        "id": "q1",
-        "prompt": "What is the capital city of Ethiopia?",
-        "choices": [
-            {"id": "c1", "label": "Addis Ababa"},
-            {"id": "c2", "label": "Hawassa"},
-            {"id": "c3", "label": "Dire Dawa"},
-            {"id": "c4", "label": "Bahir Dar"},
-        ],
-        "correct_choice_id": "c1",
-    },
-    {
-        "id": "q2",
-        "prompt": "What is the national currency of Ethiopia?",
-        "choices": [
-            {"id": "c5", "label": "Birr"},
-            {"id": "c6", "label": "Shilling"},
-            {"id": "c7", "label": "Dinar"},
-            {"id": "c8", "label": "Franc"},
-        ],
-        "correct_choice_id": "c5",
-    },
-    {
-        "id": "q3",
-        "prompt": "Which ancient Ethiopian town is famous for rock-hewn churches?",
-        "choices": [
-            {"id": "c9", "label": "Lalibela"},
-            {"id": "c10", "label": "Axum"},
-            {"id": "c11", "label": "Gondar"},
-            {"id": "c12", "label": "Harar"},
-        ],
-        "correct_choice_id": "c9",
-    },
-    {
-        "id": "q4",
-        "prompt": "How many players are on a standard soccer team on the field?",
-        "choices": [
-            {"id": "c13", "label": "11"},
-            {"id": "c14", "label": "10"},
-            {"id": "c15", "label": "9"},
-            {"id": "c16", "label": "12"},
-        ],
-        "correct_choice_id": "c13",
-    },
-    {
-        "id": "q5",
-        "prompt": "Which planet is known as the Red Planet?",
-        "choices": [
-            {"id": "c17", "label": "Mars"},
-            {"id": "c18", "label": "Venus"},
-            {"id": "c19", "label": "Jupiter"},
-            {"id": "c20", "label": "Saturn"},
-        ],
-        "correct_choice_id": "c17",
-    },
-]
 
 
 class DuelService:
@@ -94,20 +38,70 @@ class DuelService:
         self.session = session
         self.wallets = WalletService(session)
 
+    async def list_available_categories(self) -> list[DuelCategoryView]:
+        """Return active categories that have at least NUM_DUEL_QUESTIONS in the DB."""
+        count_sq = (
+            select(
+                Question.category.label("cat_id"),
+                func.count(Question.id).label("q_count"),
+            )
+            .where(Question.category.is_not(None))
+            .group_by(Question.category)
+            .subquery()
+        )
+
+        stmt = (
+            select(
+                QuestionCategory,
+                func.coalesce(count_sq.c.q_count, 0).label("question_count"),
+            )
+            .outerjoin(count_sq, count_sq.c.cat_id == QuestionCategory.id)
+            .where(QuestionCategory.is_active.is_(True))
+            .order_by(QuestionCategory.name.asc())
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [
+            DuelCategoryView(
+                id=cat.id,
+                name=cat.name,
+                icon=cat.icon,
+                description=cat.description,
+                question_count=int(cnt),
+            )
+            for cat, cnt in rows
+            if int(cnt) >= NUM_DUEL_QUESTIONS
+        ]
+
     async def _pick_questions(self, category: str) -> list[dict[str, Any]]:
+        norm_cat = category.strip().lower()
+        cat = await self.session.get(QuestionCategory, norm_cat)
+        if not cat or not cat.is_active:
+            raise AppError(
+                "invalid_category",
+                f"Selected category '{category}' is not available.",
+                status_code=400,
+            )
+
         query = (
             select(Question)
             .options(selectinload(Question.choices))
+            .where(Question.category == norm_cat)
             .order_by(func.random())
             .limit(NUM_DUEL_QUESTIONS)
         )
         questions = list((await self.session.scalars(query)).all())
         if len(questions) < NUM_DUEL_QUESTIONS:
-            return list(FALLBACK_QUESTIONS)
+            raise AppError(
+                "insufficient_questions",
+                f"Category '{cat.name}' does not have enough questions in the database (found {len(questions)}, requires at least {NUM_DUEL_QUESTIONS}).",
+                status_code=400,
+            )
 
         results: list[dict[str, Any]] = []
         for q in questions:
-            correct_choice = next((c for c in q.choices if c.is_correct), q.choices[0] if q.choices else None)
+            correct_choice = next((c for c in q.choices if c.is_correct), None)
+            if not correct_choice:
+                continue
             shuffled_choices = list(q.choices)
             random.shuffle(shuffled_choices)
             results.append(
@@ -115,8 +109,15 @@ class DuelService:
                     "id": str(q.id),
                     "prompt": q.prompt,
                     "choices": [{"id": str(c.id), "label": c.label} for c in shuffled_choices],
-                    "correct_choice_id": str(correct_choice.id) if correct_choice else "",
+                    "correct_choice_id": str(correct_choice.id),
                 }
+            )
+
+        if len(results) < NUM_DUEL_QUESTIONS:
+            raise AppError(
+                "insufficient_questions",
+                f"Category '{cat.name}' does not have enough valid questions.",
+                status_code=400,
             )
         return results
 
