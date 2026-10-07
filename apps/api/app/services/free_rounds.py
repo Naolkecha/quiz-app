@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.models.attempt import Attempt, AttemptStatus
 from app.models.challenge import Challenge, ChallengeStatus
 from app.models.entry import ChallengeEntry
@@ -57,6 +58,8 @@ class FreeRoundService:
 
     async def ensure_open_rounds(self) -> None:
         """Open a round for any tier that has none. Needs a challenge with questions to copy."""
+        if not get_settings().auto_free_rounds:
+            return
         created = False
         for tier in FREE_TIERS:
             if await self._open_round(tier) is None:
@@ -88,9 +91,10 @@ class FreeRoundService:
                 challenge_title=locked.title,
                 amount=locked.base_prize_etb,
             )
-        tier = next((item for item in FREE_TIERS if item.seats == locked.max_participants), None)
-        if tier is not None:
-            await self._create_round(tier, source=locked)
+        if get_settings().auto_free_rounds:
+            tier = next((item for item in FREE_TIERS if item.seats == locked.max_participants), None)
+            if tier is not None:
+                await self._create_round(tier, source=locked)
         await self.session.commit()
         if winner is not None:
             player = await self.session.get(User, winner)

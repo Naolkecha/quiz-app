@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     telebirr_settlement_account: str = ""
     telebirr_account_name: str = "Naol Kecha"
     admin_api_key: str = ""
+    auto_free_rounds: bool = False
 
     @field_validator(
         "secret_key",
