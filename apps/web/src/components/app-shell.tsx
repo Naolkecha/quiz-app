@@ -169,9 +169,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       ? t("nav.profile")
       : pathname === "/wallet"
         ? t("nav.wallet")
-        : pathname === "/spin"
-          ? t("nav.spin")
-          : t("nav.home");
+        : pathname.startsWith("/duels")
+          ? "1v1 Duels"
+          : pathname === "/spin"
+            ? t("nav.spin")
+            : t("nav.home");
   const showNav = !questionId && !isAdmin && !onAdmin;
 
   return (
@@ -206,10 +208,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           {wrongPlace ? <div className="h-40 animate-pulse rounded-3xl bg-black/5" /> : children}
         </main>
         {!showNav ? null : (
-        <nav className="fixed inset-x-0 bottom-0 mx-auto w-full max-w-md border-t border-black/5 bg-[var(--background)]/90 px-3 py-2 backdrop-blur-md">
-          <div className="grid grid-cols-4 gap-1">
+        <nav className="fixed inset-x-0 bottom-0 mx-auto w-full max-w-md border-t border-black/5 bg-[var(--background)]/90 px-2 py-2 backdrop-blur-md">
+          <div className="grid grid-cols-5 gap-1">
             <NavLink href="/" active={pathname === "/"} icon="home">
               {t("nav.home")}
+            </NavLink>
+            <NavLink href="/duels" active={pathname.startsWith("/duels")} icon="duel">
+              Duels
             </NavLink>
             <NavLink href="/spin" active={pathname === "/spin"} icon="spin">
               {t("nav.spin")}
@@ -237,7 +242,7 @@ function NavLink({
 }: {
   href: string;
   active: boolean;
-  icon: "home" | "spin" | "wallet" | "profile";
+  icon: "home" | "duel" | "spin" | "wallet" | "profile";
   children: ReactNode;
 }) {
   return (
@@ -253,8 +258,18 @@ function NavLink({
   );
 }
 
-function TabIcon({ name }: { name: "home" | "spin" | "wallet" | "profile" }) {
+function TabIcon({ name }: { name: "home" | "duel" | "spin" | "wallet" | "profile" }) {
   const common = "h-4 w-4";
+  if (name === "duel") {
+    return (
+      <svg viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M14.5 17.5l3 3 3-3-3-3" />
+        <path d="M9.5 6.5l-3-3-3 3 3 3" />
+        <path d="M20.5 20.5l-6-6" />
+        <path d="M3.5 3.5l6 6" />
+      </svg>
+    );
+  }
   if (name === "spin") {
     return (
       <svg viewBox="0 0 24 24" className={common} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>

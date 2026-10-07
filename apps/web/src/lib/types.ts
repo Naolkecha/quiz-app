@@ -384,3 +384,59 @@ export type AdminSpinOverview = {
   segments: SpinSegment[];
 };
 
+export type DuelChoiceView = {
+  id: string;
+  label: string;
+};
+
+export type DuelQuestionView = {
+  id: string;
+  prompt: string;
+  choices: DuelChoiceView[];
+};
+
+export type DuelPlayerView = {
+  id: string;
+  first_name: string;
+  username: string | null;
+};
+
+export type DuelView = {
+  id: string;
+  creator: DuelPlayerView;
+  opponent: DuelPlayerView | null;
+  winner: DuelPlayerView | null;
+  stake_etb: string;
+  prize_etb: string;
+  platform_fee_etb: string;
+  category: string;
+  status: "waiting_opponent" | "completed" | "cancelled" | "expired";
+  questions: DuelQuestionView[];
+  creator_score: number | null;
+  creator_time_seconds: string | null;
+  opponent_score: number | null;
+  opponent_time_seconds: string | null;
+  is_tie: boolean;
+  created_at: string;
+  expires_at: string;
+  settled_at: string | null;
+  my_role: "creator" | "opponent" | "spectator" | null;
+  has_played: boolean;
+};
+
+export type CreateDuelBody = {
+  stake_etb: number;
+  category: string;
+};
+
+export type DuelAnswerInput = {
+  question_id: string;
+  selected_choice_id: string;
+};
+
+export type SubmitDuelPlayBody = {
+  answers: DuelAnswerInput[];
+  time_seconds: number;
+};
+
+

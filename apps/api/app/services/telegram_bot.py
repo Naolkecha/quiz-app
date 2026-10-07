@@ -326,6 +326,17 @@ class TelegramBotService:
             ref_param = user_referrals.get(user_id)
             keyboard = localized_launch_keyboard(self.webapp_url, lang, ref_param)
             await self.send_message(chat_id, CHALLENGE_TEXT, reply_markup=keyboard)
+        elif command.startswith(("/duel", "/duels")):
+            duel_url = f"{self.webapp_url}/duels"
+            buttons = [
+                [{"text": "⚔️ 1v1 Duel Arena | የፍልሚያ አዳራሽ", "web_app": {"url": duel_url}}]
+            ]
+            text = (
+                "⚔️ <b>1v1 Fast Duel Arena</b>\n\n"
+                "Challenge your friends or battle players in the lobby! Answer 5 questions head-to-head to win the prize pot.\n\n"
+                "ጓደኞችዎን ይፈትኑ ወይም በአዳራሹ ካሉ ተጫዋቾች ጋር ይወዳደሩ!"
+            )
+            await self.send_message(chat_id, text, reply_markup={"inline_keyboard": buttons}, parse_mode="HTML")
         elif command.startswith("/myresults"):
             results_msg = (
                 "Your results and ranking appear in the Mini App right after you compete.\n\n"
@@ -342,6 +353,23 @@ class TelegramBotService:
 
     async def _handle_start(self, chat_id: int, user_id: int, args: str) -> None:
         args_lower = args.lower()
+
+        if args_lower.startswith("duel_"):
+            duel_id = args[5:].strip()
+            duel_url = f"{self.webapp_url}/duels/{duel_id}"
+            duel_text = (
+                "⚔️ <b>You have been challenged to a 1v1 Duel!</b>\n\n"
+                "ጓደኛዎ ለ 1v1 ፍልሚያ ፈትኖዎታል! ተመሳሳይ 5 ጥያቄዎችን በመመለስ ማን እንደሚያሸንፍ ይመልከቱ።\n\n"
+                "Hiriyaa keessan tapha 1v1 tiif isin affeereera! Gaaffilee 5 deebisaatii mo'adhaa!\n\n"
+                "⚡ <i>Answer faster and with higher accuracy to claim the pot!</i>"
+            )
+            buttons = [
+                [{"text": "⚔️ Enter Duel Arena | ተቀላቀል", "web_app": {"url": duel_url}}],
+                [{"text": "🎮 Open Main App", "web_app": {"url": self.webapp_url}}],
+            ]
+            await self.send_message(chat_id, duel_text, reply_markup={"inline_keyboard": buttons}, parse_mode="HTML")
+            return
+
         is_referral = False
         if args_lower.startswith(("ref_", "r_")):
             user_referrals[user_id] = args

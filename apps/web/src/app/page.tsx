@@ -219,6 +219,28 @@ export default function HomePage() {
         </div>
       </Link>
 
+      {/* 1v1 Fast Duel Banner */}
+      <Link
+        href="/duels"
+        className="press relative flex items-center justify-between gap-3 overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-700 via-purple-700 to-indigo-900 p-4 text-white shadow-md transition-all"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-md text-2xl shadow-inner">
+            ⚔️
+          </div>
+          <div>
+            <span className="inline-block rounded-full bg-amber-400 text-gray-950 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">
+              NEW • 1V1 BATTLE
+            </span>
+            <h3 className="text-sm font-bold leading-tight mt-0.5">Challenge a Friend</h3>
+            <p className="text-[11px] text-white/85 line-clamp-1">5 questions • Winner takes the ETB pot!</p>
+          </div>
+        </div>
+        <div className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-white text-gray-900 font-bold text-xs shadow">
+          →
+        </div>
+      </Link>
+
       {/* Category selector filter pills */}
       {availableCategories.length > 1 ? (
         <section className="-mx-5 flex gap-1.5 overflow-x-auto px-5 pb-1">

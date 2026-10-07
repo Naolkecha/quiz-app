@@ -31,6 +31,9 @@ import type {
   TodayChallenge,
   User,
   Wallet,
+  CreateDuelBody,
+  DuelView,
+  SubmitDuelPlayBody,
 } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -702,4 +705,55 @@ export function updateAdminSpinConfig(
     body: JSON.stringify(payload),
   });
 }
+
+export function createDuel(body: CreateDuelBody, sessionToken: string): Promise<DuelView> {
+  return request<DuelView>("/api/duels", {
+    method: "POST",
+    headers: bearer(sessionToken),
+    body: JSON.stringify(body),
+  });
+}
+
+export function listOpenDuels(sessionToken?: string): Promise<DuelView[]> {
+  return request<DuelView[]>("/api/duels", {
+    headers: sessionToken ? bearer(sessionToken) : undefined,
+  });
+}
+
+export function listMyDuels(sessionToken: string): Promise<DuelView[]> {
+  return request<DuelView[]>("/api/duels/my", {
+    headers: bearer(sessionToken),
+  });
+}
+
+export function getDuel(duelId: string, sessionToken: string): Promise<DuelView> {
+  return request<DuelView>(`/api/duels/${duelId}`, {
+    headers: bearer(sessionToken),
+  });
+}
+
+export function playCreatorDuel(
+  duelId: string,
+  body: SubmitDuelPlayBody,
+  sessionToken: string,
+): Promise<DuelView> {
+  return request<DuelView>(`/api/duels/${duelId}/play-creator`, {
+    method: "POST",
+    headers: bearer(sessionToken),
+    body: JSON.stringify(body),
+  });
+}
+
+export function playOpponentDuel(
+  duelId: string,
+  body: SubmitDuelPlayBody,
+  sessionToken: string,
+): Promise<DuelView> {
+  return request<DuelView>(`/api/duels/${duelId}/play-opponent`, {
+    method: "POST",
+    headers: bearer(sessionToken),
+    body: JSON.stringify(body),
+  });
+}
+
 
