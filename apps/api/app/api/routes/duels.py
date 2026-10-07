@@ -40,11 +40,12 @@ async def create_duel(
 )
 async def list_open_duels(
     session: DbSession,
+    current_user: OptionalUser,
     limit: int = 30,
 ) -> list[DuelView]:
     service = DuelService(session)
-    duels = await service.list_open_duels(limit=limit)
-    return [service.serialize_duel(d) for d in duels]
+    duels = await service.list_open_duels(current_user=current_user, limit=limit)
+    return [service.serialize_duel(d, current_user=current_user) for d in duels]
 
 
 @router.get(

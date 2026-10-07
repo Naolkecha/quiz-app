@@ -156,6 +156,21 @@ class DuelService:
                 description=f"1v1 Duel stake ({stake} ETB)",
             )
 
+        invited_list: list[str] = []
+        if body.invited_username:
+            for u in body.invited_username.replace(",", " ").split():
+                clean_u = u.strip().lstrip("@").lower()
+                if clean_u and clean_u not in invited_list:
+                    invited_list.append(clean_u)
+        if body.invited_usernames:
+            for u in body.invited_usernames:
+                clean_u = u.strip().lstrip("@").lower()
+                if clean_u and clean_u not in invited_list:
+                    invited_list.append(clean_u)
+
+        primary_invited = invited_list[0] if invited_list else None
+        is_public = body.is_public if not invited_list else False
+
         duel = Duel(
             id=duel_id,
             creator_id=user.id,
@@ -164,6 +179,9 @@ class DuelService:
             platform_fee_etb=platform_fee,
             category=body.category.lower().strip() or "general",
             status=DuelStatus.WAITING_OPPONENT,
+            invited_username=primary_invited,
+            invited_usernames=invited_list,
+            is_public=is_public,
             questions=questions,
             expires_at=now + timedelta(hours=DUEL_EXPIRY_HOURS),
         )
@@ -196,7 +214,49 @@ class DuelService:
 
         await self.session.commit()
         await self.session.refresh(duel)
+
+        if duel.invited_usernames:
+            await self._notify_invited_opponents(duel, user)
+
         return duel
+
+    async def _notify_invited_opponents(self, duel: Duel, creator: User) -> None:
+        try:
+            from app.services.telegram_bot import TelegramBotService
+            bot = TelegramBotService()
+            if not bot.token:
+                return
+
+            stake_text = f"{duel.stake_etb} ETB" if duel.stake_etb > 0 else "Free"
+            creator_display = f"@{creator.username}" if creator.username else creator.first_name
+            text = (
+                f"⚔️ <b>1v1 Duel Challenge!</b>\n\n"
+                f"{creator_display} has challenged you to a 1v1 Quiz Duel!\n\n"
+                f"📊 <b>Category:</b> {duel.category.capitalize()}\n"
+                f"💰 <b>Stake:</b> {stake_text} • <b>Winner Takes:</b> {duel.prize_etb} ETB\n\n"
+                f"⚡ <i>Can you beat their score? Tap below to enter the Arena!</i>"
+            )
+            duel_url = f"{bot.webapp_url}/duels/{duel.id}"
+            reply_markup = {
+                "inline_keyboard": [
+                    [{"text": "⚔️ Accept Challenge | ተቀላቀል", "web_app": {"url": duel_url}}],
+                    [{"text": "🎮 Open Mini App", "web_app": {"url": bot.webapp_url}}],
+                ]
+            }
+
+            for username in duel.invited_usernames:
+                target_user = await self.session.scalar(
+                    select(User).where(func.lower(User.username) == username.lower())
+                )
+                if target_user and target_user.telegram_id:
+                    await bot.send_message(
+                        target_user.telegram_id,
+                        text,
+                        reply_markup=reply_markup,
+                        parse_mode="HTML",
+                    )
+        except Exception:
+            pass
 
     async def join_and_play(
         self,
@@ -218,6 +278,20 @@ class DuelService:
             duel.status = DuelStatus.EXPIRED
             await self.session.commit()
             raise AppError("duel_expired", "This duel has expired.", status_code=400)
+
+        # Enforce invited user restrictions
+        if duel.invited_usernames or duel.invited_username:
+            allowed = set(duel.invited_usernames or [])
+            if duel.invited_username:
+                allowed.add(duel.invited_username.lower())
+            curr_username = (user.username or "").lower().strip()
+            if not curr_username or curr_username not in allowed:
+                targets = ", ".join(f"@{u}" for u in allowed)
+                raise AppError(
+                    "private_duel",
+                    f"This duel is private and reserved only for {targets}.",
+                    status_code=403,
+                )
 
         stake = duel.stake_etb
         if stake > 0:
@@ -360,15 +434,29 @@ class DuelService:
                 score += 1
         return score
 
-    async def list_open_duels(self, limit: int = 30) -> list[Duel]:
+    async def list_open_duels(self, current_user: User | None = None, limit: int = 30) -> list[Duel]:
         now = datetime.now(UTC)
+        conditions = [
+            Duel.status == DuelStatus.WAITING_OPPONENT,
+            Duel.creator_finished_at.is_not(None),
+            Duel.expires_at > now,
+        ]
+
+        if current_user and current_user.username:
+            curr_username = current_user.username.lower()
+            conditions.append(
+                or_(
+                    Duel.is_public.is_(True),
+                    func.lower(Duel.invited_username) == curr_username,
+                    Duel.invited_usernames.contains([curr_username]),
+                )
+            )
+        else:
+            conditions.append(Duel.is_public.is_(True))
+
         query = (
             select(Duel)
-            .where(
-                Duel.status == DuelStatus.WAITING_OPPONENT,
-                Duel.creator_finished_at.is_not(None),
-                Duel.expires_at > now,
-            )
+            .where(*conditions)
             .order_by(desc(Duel.created_at))
             .limit(limit)
         )
@@ -441,6 +529,9 @@ class DuelService:
             platform_fee_etb=duel.platform_fee_etb,
             category=duel.category,
             status=duel.status,
+            invited_username=duel.invited_username,
+            invited_usernames=duel.invited_usernames or [],
+            is_public=duel.is_public,
             questions=questions_view,
             creator_score=duel.creator_score if (duel.status == DuelStatus.COMPLETED or my_role == "creator") else None,
             creator_time_seconds=(

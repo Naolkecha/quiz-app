@@ -438,6 +438,40 @@ export default function DuelDetailPage() {
   }
 
   // Opponent View (Invited player opens the link to accept & battle!)
+  const allowedUsernames = (duel.invited_usernames && duel.invited_usernames.length > 0)
+    ? duel.invited_usernames.map((u) => u.toLowerCase())
+    : duel.invited_username
+    ? [duel.invited_username.toLowerCase()]
+    : null;
+
+  const currentUsername = state.status === "ready" && state.user.username ? state.user.username.toLowerCase() : null;
+  const isInvitedUser = !allowedUsernames || (currentUsername && allowedUsernames.includes(currentUsername));
+
+  if (!isInvitedUser && duel.my_role !== "creator") {
+    return (
+      <div className="space-y-6 pt-10 pb-8 text-center">
+        <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-rose-100 text-3xl">
+          🔒
+        </div>
+        <div>
+          <h1 className="text-xl font-black tracking-tight">Private Invitation Only</h1>
+          <p className="mt-2 text-xs text-[var(--muted)] max-w-xs mx-auto leading-relaxed">
+            This duel was created exclusively for {allowedUsernames?.map((u) => `@${u}`).join(", ")}.
+            {currentUsername ? ` You are signed in as @${currentUsername}.` : " Sign in with an invited Telegram account to battle."}
+          </p>
+        </div>
+        <div className="space-y-2 pt-2">
+          <Link
+            href="/duels"
+            className="press flex h-12 w-full items-center justify-center rounded-2xl bg-[var(--foreground)] text-[var(--background)] font-bold text-sm shadow"
+          >
+            Go to Duel Lobby
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pt-6 pb-8 text-center">
       <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-3xl text-white shadow-lg">
@@ -449,6 +483,11 @@ export default function DuelDetailPage() {
         <p className="mt-1 text-xs text-[var(--muted)]">
           5 questions • Fastest and highest score wins the pot!
         </p>
+        {allowedUsernames ? (
+          <span className="inline-block mt-2 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-bold text-amber-900">
+            🎯 Exclusively Challenged to You
+          </span>
+        ) : null}
       </div>
 
       <div className="rounded-3xl bg-[var(--card)] p-5 border border-black/5 text-left space-y-3">

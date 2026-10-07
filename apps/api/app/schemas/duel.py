@@ -28,6 +28,9 @@ class DuelAnswerInput(BaseModel):
 class CreateDuelRequest(BaseModel):
     stake_etb: Decimal = Field(default=Decimal("0.00"), ge=0, le=1000)
     category: str = Field(default="general", max_length=64)
+    invited_username: str | None = Field(default=None, max_length=128)
+    invited_usernames: list[str] = Field(default_factory=list)
+    is_public: bool = Field(default=False)
 
 
 class SubmitDuelPlayRequest(BaseModel):
@@ -51,6 +54,9 @@ class DuelView(BaseModel):
     platform_fee_etb: Decimal
     category: str
     status: str
+    invited_username: str | None = None
+    invited_usernames: list[str] = Field(default_factory=list)
+    is_public: bool = False
     questions: list[DuelQuestionView]
     creator_score: int | None = None
     creator_time_seconds: Decimal | None = None

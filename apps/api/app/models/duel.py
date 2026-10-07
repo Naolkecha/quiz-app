@@ -52,6 +52,9 @@ class Duel(Base):
     platform_fee_etb: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"), nullable=False)
     category: Mapped[str] = mapped_column(String(64), default="general", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default=DuelStatus.WAITING_OPPONENT, index=True, nullable=False)
+    invited_username: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    invited_usernames: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     questions: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
 
     creator_score: Mapped[int | None] = mapped_column(Integer, nullable=True)

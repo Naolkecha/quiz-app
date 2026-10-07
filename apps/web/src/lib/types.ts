@@ -411,6 +411,9 @@ export type DuelView = {
   platform_fee_etb: string;
   category: string;
   status: "waiting_opponent" | "completed" | "cancelled" | "expired";
+  invited_username?: string | null;
+  invited_usernames?: string[];
+  is_public: boolean;
   questions: DuelQuestionView[];
   creator_score: number | null;
   creator_time_seconds: string | null;
@@ -427,6 +430,9 @@ export type DuelView = {
 export type CreateDuelBody = {
   stake_etb: number;
   category: string;
+  invited_username?: string;
+  invited_usernames?: string[];
+  is_public?: boolean;
 };
 
 export type DuelAnswerInput = {

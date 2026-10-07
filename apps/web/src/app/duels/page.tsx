@@ -41,6 +41,8 @@ export default function DuelsHubPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedStake, setSelectedStake] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState("general");
+  const [inviteType, setInviteType] = useState<"link" | "username" | "public">("link");
+  const [targetUsername, setTargetUsername] = useState("");
   const [creating, setCreating] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
 
@@ -77,11 +79,23 @@ export default function DuelsHubPage() {
       setModalError("Please open Challenge from Telegram to create a duel.");
       return;
     }
+    if (inviteType === "username" && !targetUsername.trim()) {
+      setModalError("Please enter your friend's Telegram username (e.g. john_doe).");
+      return;
+    }
+
     setCreating(true);
     setModalError(null);
     try {
+      const isPublic = inviteType === "public";
+      const invitedUsername = inviteType === "username" ? targetUsername.trim() : undefined;
       const created = await createDuel(
-        { stake_etb: selectedStake, category: selectedCategory },
+        {
+          stake_etb: selectedStake,
+          category: selectedCategory,
+          is_public: isPublic,
+          invited_username: invitedUsername,
+        },
         sessionToken,
       );
       setShowCreate(false);
@@ -199,23 +213,43 @@ export default function DuelsHubPage() {
           ) : (
             openDuels.map((duel) => {
               const isMine = currentUserId && duel.creator.id === currentUserId;
+              const currentUsername = state.status === "ready" && state.user.username ? state.user.username.toLowerCase() : null;
+              const isInvitedForMe = currentUsername && (
+                (duel.invited_usernames && duel.invited_usernames.includes(currentUsername)) ||
+                (duel.invited_username && duel.invited_username.toLowerCase() === currentUsername)
+              );
               const stakeAmount = Number(duel.stake_etb);
               return (
                 <Link
                   key={duel.id}
                   href={`/duels/${duel.id}`}
-                  className="press flex items-center justify-between gap-3 rounded-2xl bg-[var(--card)] p-4 shadow-sm border border-black/5 hover:border-black/10 transition-all"
+                  className={`press flex items-center justify-between gap-3 rounded-2xl bg-[var(--card)] p-4 shadow-sm border transition-all ${
+                    isInvitedForMe ? "border-amber-400 bg-amber-500/5 ring-1 ring-amber-400/50" : "border-black/5 hover:border-black/10"
+                  }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-black text-sm shadow">
                       ⚔️
                     </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-xs font-bold truncate">{duel.creator.first_name}</span>
                         {isMine ? (
                           <span className="rounded bg-indigo-100 px-1.5 py-0.2 text-[9px] font-bold text-indigo-700">
                             YOU
+                          </span>
+                        ) : null}
+                        {isInvitedForMe ? (
+                          <span className="rounded bg-amber-100 px-1.5 py-0.2 text-[9px] font-black text-amber-800">
+                            🎯 FOR YOU
+                          </span>
+                        ) : duel.invited_username ? (
+                          <span className="rounded bg-black/5 px-1.5 py-0.2 text-[9px] font-semibold text-[var(--muted)]">
+                            @{duel.invited_username}
+                          </span>
+                        ) : duel.is_public ? (
+                          <span className="rounded bg-emerald-100 px-1.5 py-0.2 text-[9px] font-bold text-emerald-800">
+                            PUBLIC
                           </span>
                         ) : null}
                       </div>
@@ -428,6 +462,74 @@ export default function DuelsHubPage() {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Challenge Mode: Link vs Username vs Public */}
+            <div>
+              <label className="block text-xs font-bold text-[var(--muted)] uppercase tracking-wider mb-2">
+                Challenge Mode
+              </label>
+              <div className="grid grid-cols-3 gap-1 rounded-2xl bg-black/5 p-1">
+                <button
+                  type="button"
+                  onClick={() => setInviteType("link")}
+                  className={`h-8 rounded-xl text-[11px] font-bold transition-all ${
+                    inviteType === "link"
+                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
+                      : "text-[var(--muted)]"
+                  }`}
+                >
+                  🔗 Link Only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInviteType("username")}
+                  className={`h-8 rounded-xl text-[11px] font-bold transition-all ${
+                    inviteType === "username"
+                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
+                      : "text-[var(--muted)]"
+                  }`}
+                >
+                  👤 @Username
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInviteType("public")}
+                  className={`h-8 rounded-xl text-[11px] font-bold transition-all ${
+                    inviteType === "public"
+                      ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
+                      : "text-[var(--muted)]"
+                  }`}
+                >
+                  🌐 Public
+                </button>
+              </div>
+
+              {inviteType === "link" ? (
+                <p className="mt-2 text-[11px] text-[var(--muted)] leading-relaxed">
+                  🔒 Private: Only the friend you send the link to can enter and play.
+                </p>
+              ) : inviteType === "username" ? (
+                <div className="mt-2 space-y-1.5">
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs text-[var(--muted)] font-mono">@</span>
+                    <input
+                      type="text"
+                      placeholder="friend_username (e.g. john_doe)"
+                      value={targetUsername}
+                      onChange={(e) => setTargetUsername(e.target.value.replace(/^@/, ""))}
+                      className="w-full rounded-2xl border border-black/10 bg-[var(--card)] py-2 pl-7 pr-3 text-xs font-medium focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <p className="text-[11px] text-[var(--muted)] leading-relaxed">
+                    🎯 Only this username can accept. The Telegram bot will also send them a direct challenge card!
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-2 text-[11px] text-[var(--muted)] leading-relaxed">
+                  🌐 Open match: Appears on the public lobby board for any online player to battle.
+                </p>
+              )}
             </div>
 
             {selectedStake > Number(wallet?.balance_etb ?? 0) ? (
