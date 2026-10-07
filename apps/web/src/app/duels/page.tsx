@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/components/app-shell";
-import { ApiError, createDuel, listMyDuels, listOpenDuels } from "@/lib/api";
-import type { DuelView } from "@/lib/types";
+import { ApiError, createDuel, getWallet, listMyDuels, listOpenDuels } from "@/lib/api";
+import type { DuelView, Wallet } from "@/lib/types";
 
 const STAKE_OPTIONS = [
   { stake: 0, label: "Free (Demo)", prize: "0 ETB" },
+  { stake: 1, label: "1 ETB", prize: "1.80 ETB" },
   { stake: 5, label: "5 ETB", prize: "9.00 ETB" },
   { stake: 10, label: "10 ETB", prize: "18.00 ETB" },
   { stake: 25, label: "25 ETB", prize: "45.00 ETB" },
@@ -32,24 +33,30 @@ export default function DuelsHubPage() {
   const [activeTab, setActiveTab] = useState<"lobby" | "my">("lobby");
   const [openDuels, setOpenDuels] = useState<DuelView[] | null>(null);
   const [myDuels, setMyDuels] = useState<DuelView[] | null>(null);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Create Duel modal state
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedStake, setSelectedStake] = useState(5);
+  const [selectedStake, setSelectedStake] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState("general");
   const [creating, setCreating] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [open, mine] = await Promise.all([
+      const [open, mine, userWallet] = await Promise.all([
         listOpenDuels(sessionToken ?? undefined),
         sessionToken ? listMyDuels(sessionToken) : Promise.resolve([]),
+        sessionToken ? getWallet(sessionToken).catch(() => null) : Promise.resolve(null),
       ]);
       setOpenDuels(open);
       setMyDuels(mine);
+      if (userWallet) {
+        setWallet(userWallet);
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -67,11 +74,11 @@ export default function DuelsHubPage() {
 
   const handleCreateDuel = async () => {
     if (!sessionToken) {
-      setError("Please open Challenge from Telegram to create a duel.");
+      setModalError("Please open Challenge from Telegram to create a duel.");
       return;
     }
     setCreating(true);
-    setError(null);
+    setModalError(null);
     try {
       const created = await createDuel(
         { stake_etb: selectedStake, category: selectedCategory },
@@ -81,9 +88,9 @@ export default function DuelsHubPage() {
       router.push(`/duels/${created.id}`);
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message);
+        setModalError(err.message);
       } else {
-        setError("Failed to create duel.");
+        setModalError("Failed to create duel.");
       }
     } finally {
       setCreating(false);
@@ -343,14 +350,38 @@ export default function DuelsHubPage() {
               </button>
             </div>
 
+            {/* Wallet Balance Display */}
+            <div className="flex items-center justify-between rounded-2xl bg-black/5 px-3.5 py-2.5 text-xs">
+              <span className="text-[var(--muted)] font-medium">Your Balance:</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-emerald-600">
+                  {wallet ? `${wallet.balance_etb} ETB` : "..."}
+                </span>
+                <Link
+                  href="/wallet"
+                  className="rounded-full bg-emerald-600/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700 hover:bg-emerald-600/20"
+                >
+                  + Top Up
+                </Link>
+              </div>
+            </div>
+
             {/* Stake selection */}
             <div>
-              <label className="block text-xs font-bold text-[var(--muted)] uppercase tracking-wider mb-2">
-                Choose Stake
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">
+                  Choose Stake
+                </label>
+                {selectedStake > Number(wallet?.balance_etb ?? 0) ? (
+                  <Link href="/wallet" className="text-[11px] font-bold text-amber-600 underline">
+                    Deposit via Telebirr
+                  </Link>
+                ) : null}
+              </div>
               <div className="grid grid-cols-3 gap-2">
                 {STAKE_OPTIONS.map((opt) => {
                   const active = selectedStake === opt.stake;
+                  const canAfford = opt.stake === 0 || (wallet && Number(wallet.balance_etb) >= opt.stake);
                   return (
                     <button
                       key={opt.stake}
@@ -359,7 +390,9 @@ export default function DuelsHubPage() {
                       className={`press p-2.5 rounded-2xl text-center border transition-all ${
                         active
                           ? "bg-[var(--foreground)] text-[var(--background)] border-transparent shadow"
-                          : "bg-[var(--card)] border-black/5 hover:border-black/20"
+                          : canAfford
+                          ? "bg-[var(--card)] border-black/5 hover:border-black/20"
+                          : "bg-black/5 border-dashed border-black/10 opacity-60"
                       }`}
                     >
                       <span className="block text-xs font-bold">{opt.label}</span>
@@ -397,13 +430,32 @@ export default function DuelsHubPage() {
               </div>
             </div>
 
+            {selectedStake > Number(wallet?.balance_etb ?? 0) ? (
+              <div className="rounded-2xl bg-amber-500/10 p-3 text-xs text-amber-800 border border-amber-500/20 flex items-center justify-between">
+                <span>You need {selectedStake} ETB (Balance: {wallet?.balance_etb ?? "0.00"} ETB).</span>
+                <Link href="/wallet" className="font-bold underline ml-2 shrink-0">
+                  Deposit
+                </Link>
+              </div>
+            ) : null}
+
+            {modalError ? (
+              <div className="rounded-2xl bg-rose-500/10 p-3 text-xs text-rose-600 border border-rose-500/20">
+                {modalError}
+              </div>
+            ) : null}
+
             <button
               type="button"
-              disabled={creating}
+              disabled={creating || (selectedStake > 0 && selectedStake > Number(wallet?.balance_etb ?? 0))}
               onClick={() => void handleCreateDuel()}
               className="press w-full h-12 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 font-bold text-gray-950 text-sm shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {creating ? "Setting up..." : "⚡ Play My Turn (5 Questions)"}
+              {creating
+                ? "Setting up..."
+                : selectedStake > 0 && selectedStake > Number(wallet?.balance_etb ?? 0)
+                ? `Insufficient Balance (Need ${selectedStake} ETB)`
+                : "⚡ Play My Turn (5 Questions)"}
             </button>
           </div>
         </div>
