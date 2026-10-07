@@ -431,11 +431,32 @@ export default function DuelsHubPage() {
             </div>
 
             {selectedStake > Number(wallet?.balance_etb ?? 0) ? (
-              <div className="rounded-2xl bg-amber-500/10 p-3 text-xs text-amber-800 border border-amber-500/20 flex items-center justify-between">
-                <span>You need {selectedStake} ETB (Balance: {wallet?.balance_etb ?? "0.00"} ETB).</span>
-                <Link href="/wallet" className="font-bold underline ml-2 shrink-0">
-                  Deposit
-                </Link>
+              <div className="rounded-2xl bg-gradient-to-br from-amber-500/15 to-orange-500/15 p-3.5 text-xs text-amber-900 border border-amber-500/30 space-y-2.5">
+                <div className="flex items-start gap-2">
+                  <span className="text-base">⚠️</span>
+                  <div className="flex-1">
+                    <p className="font-bold text-amber-950">Insufficient Balance</p>
+                    <p className="text-[11px] text-amber-900/90 mt-0.5">
+                      You need <b>{selectedStake} ETB</b> to create this duel. Your balance is <b>{wallet?.balance_etb ?? "0.00"} ETB</b> (short by {(selectedStake - Number(wallet?.balance_etb ?? 0)).toFixed(2)} ETB).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <Link
+                    href="/wallet"
+                    className="press flex-1 flex h-8 items-center justify-center gap-1 rounded-xl bg-amber-500 font-bold text-gray-950 text-[11px] shadow-sm"
+                  >
+                    <span>💳</span> Deposit via Telebirr
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStake(0)}
+                    className="press h-8 px-3 rounded-xl bg-black/5 text-[11px] font-semibold text-[var(--foreground)]"
+                  >
+                    Play Free (0 ETB)
+                  </button>
+                </div>
               </div>
             ) : null}
 
@@ -445,18 +466,23 @@ export default function DuelsHubPage() {
               </div>
             ) : null}
 
-            <button
-              type="button"
-              disabled={creating || (selectedStake > 0 && selectedStake > Number(wallet?.balance_etb ?? 0))}
-              onClick={() => void handleCreateDuel()}
-              className="press w-full h-12 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 font-bold text-gray-950 text-sm shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {creating
-                ? "Setting up..."
-                : selectedStake > 0 && selectedStake > Number(wallet?.balance_etb ?? 0)
-                ? `Insufficient Balance (Need ${selectedStake} ETB)`
-                : "⚡ Play My Turn (5 Questions)"}
-            </button>
+            {selectedStake > Number(wallet?.balance_etb ?? 0) ? (
+              <Link
+                href="/wallet"
+                className="press flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 font-bold text-gray-950 text-sm shadow-lg"
+              >
+                <span>💳</span> Deposit {(selectedStake - Number(wallet?.balance_etb ?? 0)).toFixed(2)} ETB to Play
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled={creating}
+                onClick={() => void handleCreateDuel()}
+                className="press w-full h-12 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 font-bold text-gray-950 text-sm shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {creating ? "Setting up..." : "⚡ Play My Turn (5 Questions)"}
+              </button>
+            )}
           </div>
         </div>
       ) : null}

@@ -5,8 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/components/app-shell";
-import { ApiError, getDuel, playCreatorDuel, playOpponentDuel } from "@/lib/api";
-import type { DuelAnswerInput, DuelView } from "@/lib/types";
+import { ApiError, getDuel, getWallet, playCreatorDuel, playOpponentDuel } from "@/lib/api";
+import type { DuelAnswerInput, DuelView, Wallet } from "@/lib/types";
 
 export default function DuelDetailPage() {
   const params = useParams();
@@ -18,6 +18,7 @@ export default function DuelDetailPage() {
   const currentUserId = state.status === "ready" ? state.user.id : null;
 
   const [duel, setDuel] = useState<DuelView | null>(null);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -36,8 +37,12 @@ export default function DuelDetailPage() {
 
   const loadDuel = useCallback(async () => {
     try {
-      const data = await getDuel(duelId, sessionToken);
+      const [data, userWallet] = await Promise.all([
+        getDuel(duelId, sessionToken),
+        sessionToken ? getWallet(sessionToken).catch(() => null) : Promise.resolve(null),
+      ]);
       setDuel(data);
+      if (userWallet) setWallet(userWallet);
       // If creator and hasn't played, auto-start quiz
       if (data.my_role === "creator" && !data.has_played) {
         setIsPlaying(true);
@@ -461,13 +466,55 @@ export default function DuelDetailPage() {
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={startOpponentPlay}
-        className="press flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 font-black text-gray-950 text-base shadow-xl"
-      >
-        <span>⚔️</span> Accept & Start Battle (5 Qs)
-      </button>
+      {/* Wallet Balance Status */}
+      {Number(duel.stake_etb) > 0 ? (
+        <div
+          className={`rounded-2xl p-4 text-left space-y-2 border ${
+            wallet && Number(wallet.balance_etb) >= Number(duel.stake_etb)
+              ? "bg-emerald-500/10 border-emerald-500/20"
+              : "bg-amber-500/15 border-amber-500/30"
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-[var(--muted)]">Your Wallet Balance:</span>
+            <span className="font-mono font-bold text-sm">
+              {wallet ? `${wallet.balance_etb} ETB` : "..."}
+            </span>
+          </div>
+
+          {wallet && Number(wallet.balance_etb) < Number(duel.stake_etb) ? (
+            <div className="text-xs text-amber-900 space-y-2 pt-1 border-t border-amber-500/20">
+              <p>
+                ⚠️ You need <b>{duel.stake_etb} ETB</b> to enter this duel. You are short by{" "}
+                <b>{(Number(duel.stake_etb) - Number(wallet.balance_etb)).toFixed(2)} ETB</b>.
+              </p>
+              <Link
+                href="/wallet"
+                className="press inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-500 px-3 py-1.5 text-xs font-bold text-gray-950 shadow"
+              >
+                <span>💳</span> Deposit via Telebirr
+              </Link>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {Number(duel.stake_etb) === 0 || (wallet && Number(wallet.balance_etb) >= Number(duel.stake_etb)) ? (
+        <button
+          type="button"
+          onClick={startOpponentPlay}
+          className="press flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 font-black text-gray-950 text-base shadow-xl"
+        >
+          <span>⚔️</span> Accept & Start Battle (5 Qs)
+        </button>
+      ) : (
+        <Link
+          href="/wallet"
+          className="press flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 font-black text-gray-950 text-base shadow-xl"
+        >
+          <span>💳</span> Deposit {Number(duel.stake_etb) > 0 ? `${duel.stake_etb} ETB ` : ""}to Accept Challenge
+        </Link>
+      )}
     </div>
   );
 }
