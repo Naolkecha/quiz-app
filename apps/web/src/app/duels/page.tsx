@@ -94,9 +94,16 @@ export default function DuelsHubPage() {
     e.preventDefault();
     e.stopPropagation();
     const stakeText = Number(duel.stake_etb) > 0 ? `${duel.stake_etb} ETB` : "Free";
-    const text = `⚔️ I created a 1v1 Quiz Duel (${stakeText})! Can you beat my score? Tap to battle:`;
-    const shareUrl = `https://t.me/share/url?url=https://t.me/Ethioquiz_bot/app?startapp=duel_${duel.id}&text=${encodeURIComponent(text)}`;
-    window.open(shareUrl, "_blank");
+    const text = `⚔️ I created a 1v1 Quiz Duel (${stakeText})! Can you beat my score? Tap below to battle:`;
+    const inviteLink = `https://t.me/Ethioquiz_bot?start=duel_${duel.id}`;
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(text)}`;
+
+    const tg = typeof window !== "undefined" ? (window as unknown as { Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } } }).Telegram?.WebApp : null;
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(shareUrl);
+    } else {
+      window.open(shareUrl, "_blank");
+    }
   };
 
   return (

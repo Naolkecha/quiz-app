@@ -726,9 +726,9 @@ export function listMyDuels(sessionToken: string): Promise<DuelView[]> {
   });
 }
 
-export function getDuel(duelId: string, sessionToken: string): Promise<DuelView> {
+export function getDuel(duelId: string, sessionToken?: string | null): Promise<DuelView> {
   return request<DuelView>(`/api/duels/${duelId}`, {
-    headers: bearer(sessionToken),
+    headers: sessionToken ? bearer(sessionToken) : undefined,
   });
 }
 

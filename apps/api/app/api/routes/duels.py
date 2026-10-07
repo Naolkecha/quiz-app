@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, status
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, OptionalUser
 from app.schemas.duel import (
     CreateDuelRequest,
     DuelView,
@@ -70,7 +70,7 @@ async def list_my_duels(
 async def get_duel(
     duel_id: UUID,
     session: DbSession,
-    current_user: CurrentUser,
+    current_user: OptionalUser,
 ) -> DuelView:
     service = DuelService(session)
     duel = await service.get_duel(duel_id)

@@ -13,13 +13,14 @@ export default function DuelDetailPage() {
   const router = useRouter();
   const duelId = String(params.id);
 
-  const { state } = useAuth();
+  const { state, devAuthEnabled, signInDevelopment } = useAuth();
   const sessionToken = state.status === "ready" ? state.sessionToken : null;
   const currentUserId = state.status === "ready" ? state.user.id : null;
 
   const [duel, setDuel] = useState<DuelView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Gameplay state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -29,8 +30,11 @@ export default function DuelDetailPage() {
   const startTimeRef = useRef<number>(0);
   const [elapsed, setElapsed] = useState(0);
 
+  const getInviteLink = useCallback(() => {
+    return `https://t.me/Ethioquiz_bot?start=duel_${duelId}`;
+  }, [duelId]);
+
   const loadDuel = useCallback(async () => {
-    if (!sessionToken) return;
     try {
       const data = await getDuel(duelId, sessionToken);
       setDuel(data);
@@ -117,9 +121,31 @@ export default function DuelDetailPage() {
   const shareDuel = () => {
     if (!duel) return;
     const stakeText = Number(duel.stake_etb) > 0 ? `${duel.stake_etb} ETB` : "Free";
-    const text = `⚔️ I scored ${duel.creator_score}/5 in a 1v1 Quiz Duel (${stakeText})! Can you beat me? Tap to battle:`;
-    const shareUrl = `https://t.me/share/url?url=https://t.me/Ethioquiz_bot/app?startapp=duel_${duel.id}&text=${encodeURIComponent(text)}`;
-    window.open(shareUrl, "_blank");
+    const text = `⚔️ I scored ${duel.creator_score ?? 0}/5 in a 1v1 Quiz Duel (${stakeText})! Can you beat my score? Tap below to battle:`;
+    const inviteLink = getInviteLink();
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(text)}`;
+
+    const tg = typeof window !== "undefined" ? (window as unknown as { Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } } }).Telegram?.WebApp : null;
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(shareUrl);
+    } else {
+      window.open(shareUrl, "_blank");
+    }
+  };
+
+  const copyInviteLink = async () => {
+    const inviteLink = getInviteLink();
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(inviteLink);
+      } else {
+        throw new Error("No clipboard API");
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      window.prompt("Copy duel invite link to send to your friend:", inviteLink);
+    }
   };
 
   if (loading) {
@@ -127,6 +153,68 @@ export default function DuelDetailPage() {
       <div className="space-y-4 pt-10 text-center">
         <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
         <p className="text-xs text-[var(--muted)] font-medium">Entering Duel Arena...</p>
+      </div>
+    );
+  }
+
+  if (state.status === "anonymous") {
+    return (
+      <div className="space-y-6 pt-6 pb-8 text-center">
+        <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-3xl text-white shadow-lg">
+          ⚔️
+        </div>
+
+        <div>
+          <h1 className="text-xl font-black tracking-tight">
+            {duel ? `${duel.creator.first_name} Challenged You!` : "1v1 Duel Challenge"}
+          </h1>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Open inside Telegram to accept this duel and compete for prizes!
+          </p>
+        </div>
+
+        {duel ? (
+          <div className="rounded-3xl bg-[var(--card)] p-5 border border-black/5 text-left space-y-2">
+            <div className="flex justify-between text-xs">
+              <span className="text-[var(--muted)]">Category:</span>
+              <span className="font-bold capitalize">{duel.category}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-[var(--muted)]">Stake:</span>
+              <span className="font-bold">{Number(duel.stake_etb) > 0 ? `${duel.stake_etb} ETB` : "Free"}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-[var(--muted)]">Winner Takes:</span>
+              <span className="font-bold text-emerald-600">
+                {Number(duel.prize_etb) > 0 ? `${duel.prize_etb} ETB` : "Demo Play"}
+              </span>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="space-y-2">
+          <a
+            href={getInviteLink()}
+            className="press flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 font-bold text-white text-sm shadow-lg"
+          >
+            <span>🤖</span> Open in Telegram Bot
+          </a>
+          {devAuthEnabled ? (
+            <button
+              type="button"
+              onClick={() => void signInDevelopment()}
+              className="press flex h-11 w-full items-center justify-center rounded-2xl bg-black/5 font-semibold text-xs text-[var(--muted)]"
+            >
+              Dev Sign-in
+            </button>
+          ) : null}
+          <Link
+            href="/duels"
+            className="press flex h-11 w-full items-center justify-center rounded-2xl bg-black/5 font-semibold text-xs text-[var(--muted)]"
+          >
+            Back to Duel Lobby
+          </Link>
+        </div>
       </div>
     );
   }
@@ -324,6 +412,14 @@ export default function DuelDetailPage() {
             className="press flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 font-bold text-white text-sm shadow-lg"
           >
             <span>📲</span> Share to Telegram Chat / Group
+          </button>
+          <button
+            type="button"
+            onClick={() => void copyInviteLink()}
+            className="press flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--card)] border border-black/10 font-bold text-xs text-[var(--foreground)]"
+          >
+            <span>{copied ? "✓" : "📋"}</span>
+            <span>{copied ? "Link Copied to Clipboard! ✓" : "Copy Duel Invite Link"}</span>
           </button>
           <Link
             href="/duels"
